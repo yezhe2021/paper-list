@@ -8,8 +8,8 @@ from typing import Any
 import paper_finder as pf
 
 
-DEFAULT_SINCE = dt.date(2026, 3, 1)
-DEFAULT_OUTPUT = Path("reports") / "related_papers_since_2026-03-01.md"
+DEFAULT_SINCE = dt.date(2026, 1, 1)
+DEFAULT_OUTPUT = Path("reports") / "all_papers_since_2026.md"
 
 
 def collect_related_papers(since: dt.date, max_results_per_source: int) -> tuple[list[str], list[dict[str, str]], list[str]]:

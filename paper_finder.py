@@ -1109,9 +1109,7 @@ def run() -> int:
 
     reports_dir.mkdir(exist_ok=True)
     weekly_report = weekly_report_path(reports_dir, today)
-    latest_report = reports_dir / "latest.md"
     update_weekly_report(weekly_report, today, report)
-    latest_report.write_text(report, encoding="utf-8")
 
     print(f"Report written: {weekly_report}")
     print(f"Keywords: {', '.join(keywords)}")

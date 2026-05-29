@@ -34,8 +34,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_pdf_pages": 8,
     "http_timeout_seconds": 20,
     "arxiv_mode": "web",
+    "arxiv_web_queries": [
+        "kv cache",
+        "key value cache",
+        "kv-cache",
+        "prefix cache",
+        "prompt cache",
+        "cache reuse",
+    ],
     "arxiv_web_categories": ["cs.CL", "cs.AI", "cs.LG", "cs.DC"],
     "arxiv_web_recent_show": 100,
+    "arxiv_web_advanced_size": 50,
     "arxiv_timeout_seconds": 45,
     "arxiv_max_results": 12,
     "arxiv_query_delay_seconds": 5,
@@ -258,9 +267,11 @@ def parse_utc(value: str) -> dt.datetime | None:
     return parsed
 
 
-def cache_fresh(cache: dict[str, Any], query: str, max_age_hours: int) -> bool:
+def cache_fresh(cache: dict[str, Any], query: str, max_age_hours: int, max_results: int) -> bool:
     fetched_at = parse_utc(str(cache.get("fetched_at", "")))
     if cache.get("query") != query or not fetched_at:
+        return False
+    if int(cache.get("max_results", 0)) < max_results:
         return False
     return utc_now() - fetched_at <= dt.timedelta(hours=max_age_hours)
 
@@ -315,7 +326,9 @@ class ArxivSearchHTMLParser(HTMLParser):
             if self.current.get("title") and self.current.get("url"):
                 self.results.append(self.current)
             self.current = None
-        if tag in {"p", "span"}:
+        if tag == "p":
+            self.capture = None
+        elif tag == "span" and self.capture == "abstract":
             self.capture = None
         if tag == "a":
             self.link_candidate = False
@@ -474,6 +487,54 @@ def fetch_arxiv_web_search(query: str, max_results: int, config: dict[str, Any])
     return parser.results[:max_results]
 
 
+def fetch_arxiv_advanced_search(
+    query: str,
+    since: dt.date,
+    until: dt.date,
+    max_results: int,
+    config: dict[str, Any],
+) -> list[dict[str, str]]:
+    params = {
+        "advanced": "",
+        "terms-0-operator": "AND",
+        "terms-0-term": query,
+        "terms-0-field": "all",
+        "classification-computer_science": "y",
+        "classification-include_cross_list": "include",
+        "date-filter_by": "date_range",
+        "date-from_date": since.isoformat(),
+        "date-to_date": until.isoformat(),
+        "date-date_type": "submitted_date",
+        "abstracts": "show",
+        "size": int(config.get("arxiv_web_advanced_size", 50)),
+        "order": "-announced_date_first",
+    }
+    raw = http_get(
+        f"https://arxiv.org/search/advanced?{urllib.parse.urlencode(params)}",
+        accept="text/html,application/xhtml+xml,*/*",
+        timeout=int(config["arxiv_timeout_seconds"]),
+        retries=1,
+    )
+    parser = ArxivSearchHTMLParser()
+    parser.feed(raw.decode("utf-8", errors="ignore"))
+    return parser.results[:max_results]
+
+
+def fetch_arxiv_web_backfill(
+    keywords: list[str],
+    since: dt.date,
+    max_results: int,
+    config: dict[str, Any],
+) -> list[dict[str, str]]:
+    queries = list(config.get("arxiv_web_queries", [])) or [arxiv_web_query(keywords)]
+    results: list[dict[str, str]] = []
+    for idx, query in enumerate(dict.fromkeys(queries)):
+        if idx > 0:
+            time.sleep(int(config["arxiv_query_delay_seconds"]))
+        results.extend(fetch_arxiv_advanced_search(query, since, dt.date.today(), max_results, config))
+    return dedupe_items(results)[:max_results]
+
+
 def fetch_arxiv_recent_categories(max_results: int, config: dict[str, Any]) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     categories = list(config.get("arxiv_web_categories", []))
@@ -493,14 +554,19 @@ def fetch_arxiv_recent_categories(max_results: int, config: dict[str, Any]) -> l
     return dedupe_items(results)[:max_results]
 
 
-def search_arxiv(keywords: list[str], max_results: int, _from_date: dt.date) -> list[dict[str, str]]:
+def search_arxiv(keywords: list[str], max_results: int, from_date: dt.date) -> list[dict[str, str]]:
     config = load_config()
     per_query = min(max_results, int(config["arxiv_max_results"]))
     mode = str(config.get("arxiv_mode", "web"))
-    query = arxiv_web_query(keywords) if mode == "web" else arxiv_query(keywords)
+    query = (
+        f"advanced:{from_date.isoformat()}:{dt.date.today().isoformat()}:"
+        + ";".join(config.get("arxiv_web_queries", []))
+        if mode == "web"
+        else arxiv_query(keywords)
+    )
     cache = load_json_file(ARXIV_CACHE_PATH, {})
 
-    if cache.get("mode") == mode and cache_fresh(cache, query, int(config["arxiv_cache_hours"])):
+    if cache.get("mode") == mode and cache_fresh(cache, query, int(config["arxiv_cache_hours"]), max_results):
         return list(cache.get("results", []))[:max_results]
 
     if cache.get("mode") == mode and arxiv_cooldown_active(cache):
@@ -512,9 +578,9 @@ def search_arxiv(keywords: list[str], max_results: int, _from_date: dt.date) -> 
     try:
         if mode == "web":
             try:
-                results = fetch_arxiv_recent_categories(max_results, config)
+                results = fetch_arxiv_web_backfill(keywords, from_date, max_results, config)
             except Exception:
-                results = fetch_arxiv_web_search(query, per_query, config)
+                results = fetch_arxiv_recent_categories(max_results, config)
         else:
             results = fetch_arxiv_query(query, per_query, config)
     except Exception as exc:
@@ -530,6 +596,7 @@ def search_arxiv(keywords: list[str], max_results: int, _from_date: dt.date) -> 
     cache = {
         "mode": mode,
         "query": query,
+        "max_results": max_results,
         "fetched_at": utc_now().isoformat(),
         "blocked_until": "",
         "results": dedupe_items(results)[:max_results],
@@ -711,8 +778,11 @@ def dedupe_items(items: list[dict[str, str]]) -> list[dict[str, str]]:
 
 def within_date_window(item: dict[str, str], from_date: dt.date) -> bool:
     published = item.get("published", "")
-    if not published or len(published) == 4:
+    if not published:
         return True
+    if len(published) == 4 and published.isdigit():
+        year = int(published)
+        return from_date.year <= year <= dt.date.today().year
     try:
         published_date = dt.date.fromisoformat(published[:10])
         return from_date <= published_date <= dt.date.today()
@@ -816,7 +886,31 @@ def rank_item(item: dict[str, str], keywords: list[str]) -> dict[str, Any]:
     item["rank_priority"] = str(priority)
     item["rank_category"] = category
     item["rank_score"] = str(score)
+    item["fit_reason"] = fit_reason(text, priority)
     return {"priority": priority, "score": score, "published": item.get("published", "")}
+
+
+def fit_reason(text: str, priority: int) -> str:
+    reasons: list[str] = []
+    if priority == 1:
+        reasons.append("explicit KV cache sharing/reuse/communication or cross-request/cross-model signal")
+    core_matches = [
+        term
+        for term in ["compression", "quantization", "eviction", "offloading", "management", "prefill", "disaggregated"]
+        if term in text
+    ]
+    if core_matches:
+        reasons.append("core KV-cache mechanisms: " + ", ".join(core_matches[:4]))
+    optimization_matches = [
+        term
+        for term in ["inference", "serving", "latency", "throughput", "memory", "bandwidth", "long-context", "agent"]
+        if term in text
+    ]
+    if optimization_matches:
+        reasons.append("system/task optimization: " + ", ".join(optimization_matches[:4]))
+    if not reasons:
+        reasons.append("broader cache/context/inference relation")
+    return "; ".join(reasons)
 
 
 def relevant_enough(item: dict[str, str], keywords: list[str], config: dict[str, Any]) -> bool:

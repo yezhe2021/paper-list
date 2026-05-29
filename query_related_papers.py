@@ -38,7 +38,38 @@ def collect_related_papers(since: dt.date, max_results_per_source: int) -> tuple
         for item in pf.dedupe_items(items)
         if pf.within_date_window(item, since) and pf.relevant_enough(item, keywords, config)
     ]
-    return keywords, pf.sort_items(items, keywords), errors
+    return keywords, dedupe_by_title(pf.sort_items(items, keywords), keywords), errors
+
+
+def normalize_title(value: str) -> str:
+    value = pf.strip_html(value).lower()
+    value = value.replace("kv-cache", "kv cache").replace("key-value", "key value")
+    return " ".join(part for part in value.split() if part)
+
+
+def dedupe_by_title(items: list[dict[str, str]], keywords: list[str]) -> list[dict[str, str]]:
+    merged: dict[str, dict[str, str]] = {}
+    source_rank = {"arXiv": 0, "OpenAlex": 1, "Semantic Scholar": 2, "Crossref": 3}
+    for item in items:
+        key = normalize_title(item.get("title", ""))
+        if not key:
+            continue
+        existing = merged.get(key)
+        if not existing:
+            merged[key] = item.copy()
+            continue
+
+        sources = set(existing.get("source", "").split(" + ")) | {item.get("source", "")}
+        existing["source"] = " + ".join(sorted(sources))
+        if item.get("source") == "arXiv" or source_rank.get(item.get("source", ""), 9) < source_rank.get(existing.get("source", ""), 9):
+            existing["url"] = item.get("url", existing.get("url", ""))
+        if not existing.get("published") and item.get("published"):
+            existing["published"] = item["published"]
+        if int(item.get("rank_score", "0") or 0) > int(existing.get("rank_score", "0") or 0):
+            for field in ["rank_score", "rank_priority", "rank_category", "fit_reason", "abstract"]:
+                existing[field] = item.get(field, existing.get(field, ""))
+        pf.rank_item(existing, keywords)
+    return pf.sort_items(list(merged.values()), keywords)
 
 
 def render_markdown(since: dt.date, keywords: list[str], items: list[dict[str, str]], errors: list[str]) -> str:
@@ -86,12 +117,12 @@ def render_table(title: str, items: list[dict[str, str]]) -> list[str]:
 
     lines.extend(
         [
-            "| Date | Priority | Title | Source |",
-            "|---|---|---|---|",
+            "| Date | Fit | Priority | Title | Source | Why it matches |",
+            "|---|---:|---|---|---|---|",
         ]
     )
     for item in items:
-        title_text = item.get("title", "Untitled").replace("|", "/")
+        title_text = pf.strip_html(item.get("title", "Untitled")).replace("|", "/")
         url = item.get("url", "")
         linked_title = f"[{title_text}]({url})" if url else title_text
         lines.append(
@@ -99,9 +130,11 @@ def render_table(title: str, items: list[dict[str, str]]) -> list[str]:
             + " | ".join(
                 [
                     item.get("published", ""),
+                    item.get("rank_score", ""),
                     item.get("rank_category", ""),
                     linked_title,
                     item.get("source", ""),
+                    item.get("fit_reason", "").replace("|", "/"),
                 ]
             )
             + " |"

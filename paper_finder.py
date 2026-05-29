@@ -811,7 +811,11 @@ def relevance_score(item: dict[str, str], keywords: list[str]) -> int:
 
 
 def item_text(item: dict[str, str]) -> str:
-    return f"{item.get('title', '')} {item.get('abstract', '')}".lower()
+    text = f"{item.get('title', '')} {item.get('abstract', '')}".lower()
+    text = re.sub(r"\bkv\s*-\s*cache\b", "kv cache", text)
+    text = re.sub(r"\bkey\s*-\s*value\b", "key value", text)
+    text = re.sub(r"\blong\s*-\s*context\b", "long-context", text)
+    return text
 
 
 def contains_kv_cache(text: str) -> bool:
@@ -831,57 +835,56 @@ def has_p1_sharing_signal(text: str) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
 
+def has_system_management_signal(text: str) -> bool:
+    patterns = [
+        r"\b(disaggregated|cross[-\s]?datacenter|remote|tiered|multi[-\s]?tier|offload|offloading)\b",
+        r"\b(serving|serverless|service-aware|runtime|scheduler|scheduling|deployment|cluster|gpu cluster)\b",
+        r"\b(prefill[-\s]?as[-\s]?a[-\s]?service|pd separation|resource allocation|memory pool)\b",
+    ]
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def has_algorithmic_kv_signal(text: str) -> bool:
+    patterns = [
+        r"\b(compress|compression|quantization|quantized|low[-\s]?precision)\b",
+        r"\b(eviction|pruning|retention|sparsity|sparse|routing|token dropping)\b",
+        r"\b(hidden states|semantic chunking|clustered merging|attention similarity)\b",
+    ]
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def has_application_signal(text: str) -> bool:
+    patterns = [
+        r"\b(prefix caching|prompt caching|cache reuse|reuse|reusing)\b",
+        r"\b(rag|agent|tool calling|video|vision-language|vlm|vla|moe|diffusion|code generation)\b",
+        r"\b(inference acceleration|latency|throughput|long-context|long context)\b",
+    ]
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
 def rank_item(item: dict[str, str], keywords: list[str]) -> dict[str, Any]:
     text = item_text(item)
     score = relevance_score(item, keywords)
     has_kv_cache = contains_kv_cache(text)
 
-    core_terms = {
-        "compression",
-        "compress",
-        "quantization",
-        "quantized",
-        "eviction",
-        "pruning",
-        "retention",
-        "management",
-        "prefill",
-        "offloading",
-        "routing",
-    }
-    optimization_terms = {
-        "inference",
-        "serving",
-        "latency",
-        "throughput",
-        "memory",
-        "bandwidth",
-        "generation",
-        "question-answering",
-        "agent",
-        "vision-language",
-        "video",
-        "reuse",
-        "reusing",
-        "prefix caching",
-        "prompt caching",
-    }
-
     if has_kv_cache and has_p1_sharing_signal(text):
         priority = 1
-        category = "P1 multi-model/multi-agent/shared KV cache"
-    elif has_kv_cache and any(term in text for term in core_terms):
+        category = "P1 KV cache sharing and communication"
+    elif has_kv_cache and has_system_management_signal(text):
         priority = 2
-        category = "P2 core KV cache research"
-    elif has_kv_cache and any(term in text for term in optimization_terms):
+        category = "P2 KV serving systems and lifecycle management"
+    elif has_kv_cache and has_algorithmic_kv_signal(text):
         priority = 3
-        category = "P3 KV-cache-enabled optimization"
-    elif has_kv_cache:
+        category = "P3 KV compression, quantization, and eviction algorithms"
+    elif has_kv_cache and has_application_signal(text):
         priority = 4
-        category = "P4 general KV cache"
-    else:
+        category = "P4 KV-enabled application acceleration"
+    elif has_kv_cache:
         priority = 5
-        category = "P5 related cache/context/inference"
+        category = "P5 general KV cache research"
+    else:
+        priority = 6
+        category = "P6 peripheral cache/context/inference reference"
 
     item["rank_priority"] = str(priority)
     item["rank_category"] = category
@@ -893,21 +896,27 @@ def rank_item(item: dict[str, str], keywords: list[str]) -> dict[str, Any]:
 def fit_reason(text: str, priority: int) -> str:
     reasons: list[str] = []
     if priority == 1:
-        reasons.append("explicit KV cache sharing/reuse/communication or cross-request/cross-model signal")
-    core_matches = [
+        reasons.append("directly targets KV sharing, cross-request/cross-model reuse, or KV communication")
+    if priority == 2:
+        reasons.append("focuses on serving architecture, disaggregation, scheduling, offloading, or lifecycle management")
+    if priority == 3:
+        reasons.append("proposes KV representation or retention algorithms")
+    if priority == 4:
+        reasons.append("uses KV/cache behavior to accelerate a workload or task")
+    mechanism_matches = [
         term
-        for term in ["compression", "quantization", "eviction", "offloading", "management", "prefill", "disaggregated"]
+        for term in ["compression", "quantization", "eviction", "offloading", "management", "prefill", "disaggregated", "sharing", "reuse"]
         if term in text
     ]
-    if core_matches:
-        reasons.append("core KV-cache mechanisms: " + ", ".join(core_matches[:4]))
-    optimization_matches = [
+    if mechanism_matches:
+        reasons.append("mechanisms: " + ", ".join(mechanism_matches[:4]))
+    context_matches = [
         term
-        for term in ["inference", "serving", "latency", "throughput", "memory", "bandwidth", "long-context", "agent"]
+        for term in ["inference", "serving", "latency", "throughput", "memory", "bandwidth", "long-context", "agent", "multi-agent"]
         if term in text
     ]
-    if optimization_matches:
-        reasons.append("system/task optimization: " + ", ".join(optimization_matches[:4]))
+    if context_matches:
+        reasons.append("context: " + ", ".join(context_matches[:4]))
     if not reasons:
         reasons.append("broader cache/context/inference relation")
     return "; ".join(reasons)
@@ -915,7 +924,7 @@ def fit_reason(text: str, priority: int) -> str:
 
 def relevant_enough(item: dict[str, str], keywords: list[str], config: dict[str, Any]) -> bool:
     rank = rank_item(item, keywords)
-    return rank["priority"] <= 4 or rank["score"] >= int(config.get("min_relevance_score", 3))
+    return rank["priority"] <= 5 or rank["score"] >= int(config.get("min_relevance_score", 3))
 
 
 def sort_items(items: list[dict[str, str]], keywords: list[str]) -> list[dict[str, str]]:

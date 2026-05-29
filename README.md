@@ -36,10 +36,11 @@ python .\paper_finder.py
 
 当前配置重点关注 KV cache：
 
-- P1：KV cache 共享、跨请求、跨模型、多智能体、通信、解耦传输
-- P2：KV cache 本身研究，例如压缩、量化、驱逐、管理
-- P3：利用 KV cache 优化某个任务或系统，例如 prefix caching、cache reuse、推理加速
-- P4/P5：更泛的 cache、context、inference 相关内容
+- P1：KV cache 共享与通信，包括跨请求、跨用户、跨模型、多智能体、handoff、relay、KV/token communication
+- P2：KV 服务系统与生命周期管理，包括 disaggregated serving、prefill/decode 分离、offloading、调度、分层存储、cache pool、生产运行时
+- P3：KV 压缩、量化、驱逐算法，包括表示压缩、低比特量化、token retention、eviction、重构和近似
+- P4：KV 驱动的应用加速，包括 prefix/prompt caching、cache reuse、RAG、agent、VLM/VLA、MoE、video、code 等任务优化
+- P5/P6：一般 KV 或外围 cache/context/inference 参考，除非能反哺 KV cache 设计，否则不作为主目标
 
 ## 可选依赖
 

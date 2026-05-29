@@ -17,11 +17,18 @@
   "arxiv_mode": "web",
   "arxiv_web_queries": [
     "kv cache",
+    "key-value cache",
     "key value cache",
     "kv-cache",
+    "key-value cache compression",
+    "attention dynamics",
+    "global eviction ratio",
     "prefix cache",
     "prompt cache",
     "cache reuse"
+  ],
+  "arxiv_must_include_queries": [
+    "Understanding the Physics of Key-Value Cache Compression"
   ],
   "arxiv_web_categories": [
     "cs.CL",
@@ -31,6 +38,7 @@
   ],
   "arxiv_web_recent_show": 100,
   "arxiv_web_advanced_size": 50,
+  "arxiv_web_advanced_pages": 4,
   "arxiv_timeout_seconds": 45,
   "arxiv_max_results": 12,
   "arxiv_query_delay_seconds": 5,

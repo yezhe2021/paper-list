@@ -36,15 +36,21 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "arxiv_mode": "web",
     "arxiv_web_queries": [
         "kv cache",
+        "key-value cache",
         "key value cache",
         "kv-cache",
+        "key-value cache compression",
+        "attention dynamics",
+        "global eviction ratio",
         "prefix cache",
         "prompt cache",
         "cache reuse",
     ],
+    "arxiv_must_include_queries": [],
     "arxiv_web_categories": ["cs.CL", "cs.AI", "cs.LG", "cs.DC"],
     "arxiv_web_recent_show": 100,
     "arxiv_web_advanced_size": 50,
+    "arxiv_web_advanced_pages": 4,
     "arxiv_timeout_seconds": 45,
     "arxiv_max_results": 12,
     "arxiv_query_delay_seconds": 5,
@@ -493,6 +499,7 @@ def fetch_arxiv_advanced_search(
     until: dt.date,
     max_results: int,
     config: dict[str, Any],
+    start: int = 0,
 ) -> list[dict[str, str]]:
     params = {
         "advanced": "",
@@ -507,6 +514,7 @@ def fetch_arxiv_advanced_search(
         "date-date_type": "submitted_date",
         "abstracts": "show",
         "size": int(config.get("arxiv_web_advanced_size", 50)),
+        "start": start,
         "order": "-announced_date_first",
     }
     raw = http_get(
@@ -526,12 +534,30 @@ def fetch_arxiv_web_backfill(
     max_results: int,
     config: dict[str, Any],
 ) -> list[dict[str, str]]:
-    queries = list(config.get("arxiv_web_queries", [])) or [arxiv_web_query(keywords)]
+    queries = list(config.get("arxiv_must_include_queries", []))
+    queries.extend(list(config.get("arxiv_web_queries", [])) or [arxiv_web_query(keywords)])
     results: list[dict[str, str]] = []
+    page_size = int(config.get("arxiv_web_advanced_size", 50))
+    pages = int(config.get("arxiv_web_advanced_pages", 4))
     for idx, query in enumerate(dict.fromkeys(queries)):
         if idx > 0:
             time.sleep(int(config["arxiv_query_delay_seconds"]))
-        results.extend(fetch_arxiv_advanced_search(query, since, dt.date.today(), max_results, config))
+        for page in range(pages):
+            if page > 0:
+                time.sleep(int(config["arxiv_query_delay_seconds"]))
+            try:
+                results.extend(
+                    fetch_arxiv_advanced_search(
+                        query,
+                        since,
+                        dt.date.today(),
+                        max_results,
+                        config,
+                        start=page * page_size,
+                    )
+                )
+            except Exception:
+                continue
     return dedupe_items(results)[:max_results]
 
 
@@ -560,6 +586,7 @@ def search_arxiv(keywords: list[str], max_results: int, from_date: dt.date) -> l
     mode = str(config.get("arxiv_mode", "web"))
     query = (
         f"advanced:{from_date.isoformat()}:{dt.date.today().isoformat()}:"
+        + f"pages={config.get('arxiv_web_advanced_pages', 4)}:"
         + ";".join(config.get("arxiv_web_queries", []))
         if mode == "web"
         else arxiv_query(keywords)
@@ -849,6 +876,7 @@ def has_algorithmic_kv_signal(text: str) -> bool:
         r"\b(compress|compression|quantization|quantized|low[-\s]?precision)\b",
         r"\b(eviction|pruning|retention|sparsity|sparse|routing|token dropping)\b",
         r"\b(hidden states|semantic chunking|clustered merging|attention similarity)\b",
+        r"\b(attention dynamics|global eviction ratio|phase transition|representational rigidity)\b",
     ]
     return any(re.search(pattern, text) for pattern in patterns)
 

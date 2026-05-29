@@ -29,7 +29,8 @@ def collect_related_papers(since: dt.date, max_results_per_source: int) -> tuple
     errors: list[str] = []
     for name, search in pf.enabled_searches(config):
         try:
-            items.extend(search(keywords, max_results_per_source, since))
+            source_limit = max(max_results_per_source, 5000) if name == "arxiv" else max_results_per_source
+            items.extend(search(keywords, source_limit, since))
         except Exception as exc:
             errors.append(f"{name}: {exc}")
 

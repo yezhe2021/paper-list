@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.paper_finder_state.json
+.paper_finder_arxiv_cache.json
+papers/*
+!papers/.gitkeep

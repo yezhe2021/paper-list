@@ -22,6 +22,11 @@ from typing import Any, Callable
 CONFIG_PATH = Path("paper_finder_config.json")
 STATE_PATH = Path(".paper_finder_state.json")
 ARXIV_CACHE_PATH = Path(".paper_finder_arxiv_cache.json")
+RUN_DATE: dt.date | None = None
+
+
+def current_date() -> dt.date:
+    return RUN_DATE or dt.date.today()
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "papers_dir": "papers",
@@ -50,7 +55,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "arxiv_web_categories": ["cs.CL", "cs.AI", "cs.LG", "cs.DC"],
     "arxiv_web_recent_show": 100,
     "arxiv_web_advanced_size": 50,
-    "arxiv_web_advanced_pages": 4,
+    "arxiv_web_advanced_pages": 1,
     "arxiv_timeout_seconds": 45,
     "arxiv_max_results": 12,
     "arxiv_query_delay_seconds": 5,
@@ -550,7 +555,7 @@ def fetch_arxiv_web_backfill(
                     fetch_arxiv_advanced_search(
                         query,
                         since,
-                        dt.date.today(),
+                        current_date(),
                         max_results,
                         config,
                         start=page * page_size,
@@ -585,7 +590,7 @@ def search_arxiv(keywords: list[str], max_results: int, from_date: dt.date) -> l
     per_query = min(max_results, int(config["arxiv_max_results"]))
     mode = str(config.get("arxiv_mode", "web"))
     query = (
-        f"advanced:{from_date.isoformat()}:{dt.date.today().isoformat()}:"
+        f"advanced:{from_date.isoformat()}:{current_date().isoformat()}:"
         + f"pages={config.get('arxiv_web_advanced_pages', 4)}:"
         + ";".join(config.get("arxiv_web_queries", []))
         if mode == "web"
@@ -697,7 +702,7 @@ def search_semantic_scholar(
 def search_crossref(keywords: list[str], max_results: int, from_date: dt.date) -> list[dict[str, str]]:
     params = {
         "query": plain_query(keywords),
-        "filter": f"from-pub-date:{from_date.isoformat()},until-pub-date:{dt.date.today().isoformat()}",
+        "filter": f"from-pub-date:{from_date.isoformat()},until-pub-date:{current_date().isoformat()}",
         "sort": "published",
         "order": "desc",
         "rows": max_results,
@@ -809,10 +814,10 @@ def within_date_window(item: dict[str, str], from_date: dt.date) -> bool:
         return True
     if len(published) == 4 and published.isdigit():
         year = int(published)
-        return from_date.year <= year <= dt.date.today().year
+        return from_date.year <= year <= current_date().year
     try:
         published_date = dt.date.fromisoformat(published[:10])
-        return from_date <= published_date <= dt.date.today()
+        return from_date <= published_date <= current_date()
     except ValueError:
         return True
 
@@ -890,6 +895,26 @@ def has_application_signal(text: str) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
 
+def has_llm_domain_signal(text: str) -> bool:
+    patterns = [
+        r"\b(llm|llms|large language model|language model|transformer|decoder[-\s]?only)\b",
+        r"\b(attention|self[-\s]?attention|tokens?|prompt|prefix|context|long[-\s]?context)\b",
+        r"\b(inference|prefill|decode|decoding|serving|rag|agent|multi[-\s]?agent)\b",
+        r"\b(generative|diffusion|vision[-\s]?language|vlm|vla|moe)\b",
+    ]
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def is_obvious_false_positive(text: str) -> bool:
+    patterns = [
+        r"\b\d+(\.\d+)?\s*[-]?\s*kv\b",
+        r"\b(kv|kilovolt|voltage|breakdown voltage|power grid|transmission|distribution feeder|mosfet|gan|sic|algan|arresters?)\b",
+        r"\b(biology|biochemistry|clinical|hospital|knee|osteoarthritis|receptor|protein|hamp domain|cryo[-\s]?em)\b",
+        r"\b(redis|web3|decentralized cooperative caching|last[-\s]?level cache|cache replacement algorithm)\b",
+    ]
+    return any(re.search(pattern, text) for pattern in patterns) and not has_llm_domain_signal(text)
+
+
 def rank_item(item: dict[str, str], keywords: list[str]) -> dict[str, Any]:
     text = item_text(item)
     score = relevance_score(item, keywords)
@@ -955,7 +980,14 @@ def fit_reason(text: str, priority: int) -> str:
 
 def relevant_enough(item: dict[str, str], keywords: list[str], config: dict[str, Any]) -> bool:
     rank = rank_item(item, keywords)
-    return rank["priority"] <= 5 or rank["score"] >= int(config.get("min_relevance_score", 3))
+    text = item_text(item)
+    if is_obvious_false_positive(text):
+        return False
+    if contains_kv_cache(text):
+        return True
+    if has_llm_domain_signal(text) and rank["priority"] <= 5:
+        return rank["score"] >= int(config.get("min_relevance_score", 3))
+    return False
 
 
 def sort_items(items: list[dict[str, str]], keywords: list[str]) -> list[dict[str, str]]:
@@ -1002,7 +1034,7 @@ def enabled_searches(config: dict[str, Any]) -> list[tuple[str, Callable[[list[s
 def render_report(
     report_date: dt.date,
     items: list[dict[str, str]],
-    new_items: list[dict[str, str]],
+    reported_items: list[dict[str, str]],
     keywords: list[str],
     config: dict[str, Any],
 ) -> str:
@@ -1021,11 +1053,11 @@ def render_report(
         f"- Days back: {config['days_back']}",
         f"- Total papers: {paper_count}",
         f"- Total GitHub/resources: {resource_count}",
-        f"- New items: {len(new_items)}",
+        f"- Reported items: {len(reported_items)}",
         "",
     ]
-    lines.extend(render_section("New papers", [item for item in new_items if item.get("kind") == "paper"]))
-    lines.extend(render_section("New GitHub/resources", [item for item in new_items if item.get("kind") != "paper"]))
+    lines.extend(render_section("Papers in this update window", [item for item in reported_items if item.get("kind") == "paper"]))
+    lines.extend(render_section("GitHub/resources in this update window", [item for item in reported_items if item.get("kind") != "paper"]))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -1056,7 +1088,7 @@ def update_weekly_report(weekly_report: Path, report_date: dt.date, report: str)
         flags=re.DOTALL,
     )
     if pattern.search(current):
-        updated = pattern.sub(entry, current)
+        updated = pattern.sub(lambda _match: entry, current)
     else:
         updated = current.rstrip() + "\n\n" + entry
     weekly_report.write_text(updated.rstrip() + "\n", encoding="utf-8")
@@ -1085,7 +1117,16 @@ def render_section(title: str, items: list[dict[str, str]]) -> list[str]:
     return lines
 
 
-def run() -> int:
+def parse_date(value: str) -> dt.date:
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected YYYY-MM-DD, got {value!r}") from exc
+
+
+def run(report_date: dt.date | None = None, from_date: dt.date | None = None) -> int:
+    global RUN_DATE
+    RUN_DATE = report_date or dt.date.today()
     config = load_config()
     init_project()
     papers_dir = Path(config["papers_dir"])
@@ -1107,7 +1148,8 @@ def run() -> int:
         return 2
 
     keywords = extract_keywords(texts, config)
-    from_date = dt.date.today() - dt.timedelta(days=int(config["days_back"]))
+    if from_date is None:
+        from_date = current_date() - dt.timedelta(days=int(config["days_back"]))
     max_results = int(config["max_results_per_source"])
 
     items: list[dict[str, str]] = []
@@ -1124,17 +1166,14 @@ def run() -> int:
         if within_date_window(item, from_date) and relevant_enough(item, keywords, config)
     ]
     items = sort_items(items, keywords)
+    reported_items = items
     state = load_state()
     seen_ids = set(state.get("seen_ids", []))
-    new_items = sort_new_items_like_all_items(
-        [item for item in items if item.get("id") not in seen_ids],
-        items,
-    )
     state["seen_ids"] = sorted(seen_ids | {item.get("id", "") for item in items if item.get("id")})
     save_state(state)
 
-    today = dt.date.today()
-    report = render_report(today, items, new_items, keywords, config)
+    today = current_date()
+    report = render_report(today, items, reported_items, keywords, config)
     if errors:
         report += "\n## Search errors\n\n" + "\n".join(f"- {error}" for error in errors) + "\n"
 
@@ -1144,19 +1183,21 @@ def run() -> int:
 
     print(f"Report written: {weekly_report}")
     print(f"Keywords: {', '.join(keywords)}")
-    print(f"New items: {len(new_items)} / total items: {len(items)}")
+    print(f"Reported items: {len(reported_items)} / total items: {len(items)}")
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Extract keywords from local papers and find recent work.")
     parser.add_argument("--init", action="store_true", help="Create papers/, reports/, and default state file.")
+    parser.add_argument("--report-date", type=parse_date, help="Write the report into the ISO week for this date.")
+    parser.add_argument("--from-date", type=parse_date, help="Override the search window start date.")
     args = parser.parse_args()
     if args.init:
         init_project()
         print("Project initialized.")
         return 0
-    return run()
+    return run(report_date=args.report_date, from_date=args.from_date)
 
 
 if __name__ == "__main__":

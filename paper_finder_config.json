@@ -38,7 +38,7 @@
   ],
   "arxiv_web_recent_show": 100,
   "arxiv_web_advanced_size": 50,
-  "arxiv_web_advanced_pages": 4,
+  "arxiv_web_advanced_pages": 1,
   "arxiv_timeout_seconds": 45,
   "arxiv_max_results": 12,
   "arxiv_query_delay_seconds": 5,

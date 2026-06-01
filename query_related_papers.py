@@ -16,6 +16,7 @@ def collect_related_papers(since: dt.date, max_results_per_source: int) -> tuple
     config = pf.load_config()
     config["days_back"] = max(1, (dt.date.today() - since).days)
     config["max_results_per_source"] = max_results_per_source
+    config["arxiv_web_advanced_pages"] = max(int(config.get("arxiv_web_advanced_pages", 1)), 4)
 
     texts: dict[Path, str] = {}
     for path in pf.paper_paths(Path(config["papers_dir"])):

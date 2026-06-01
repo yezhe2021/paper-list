@@ -898,21 +898,22 @@ def rank_item(item: dict[str, str], keywords: list[str]) -> dict[str, Any]:
     if has_kv_cache and has_p1_sharing_signal(text):
         priority = 1
         category = "P1 KV cache sharing and communication"
-    elif has_kv_cache and has_system_management_signal(text):
-        priority = 2
-        category = "P2 KV serving systems and lifecycle management"
     elif has_kv_cache and has_algorithmic_kv_signal(text):
-        priority = 3
-        category = "P3 KV compression, quantization, and eviction algorithms"
+        priority = 2
+        category = "P2 KV compression, quantization, eviction, and mechanism analysis"
     elif has_kv_cache and has_application_signal(text):
+        priority = 3
+        category = "P3 KV-enabled application acceleration"
+    elif has_kv_cache and not has_system_management_signal(text):
         priority = 4
-        category = "P4 KV-enabled application acceleration"
-    elif has_kv_cache:
-        priority = 5
-        category = "P5 general KV cache research"
+        category = "P4 general KV cache research"
     else:
-        priority = 6
-        category = "P6 peripheral cache/context/inference reference"
+        priority = 5
+        category = "P5 serving systems and peripheral references"
+
+    if has_kv_cache and has_system_management_signal(text) and priority > 3:
+        priority = 5
+        category = "P5 serving systems and peripheral references"
 
     item["rank_priority"] = str(priority)
     item["rank_category"] = category
@@ -926,11 +927,13 @@ def fit_reason(text: str, priority: int) -> str:
     if priority == 1:
         reasons.append("directly targets KV sharing, cross-request/cross-model reuse, or KV communication")
     if priority == 2:
-        reasons.append("focuses on serving architecture, disaggregation, scheduling, offloading, or lifecycle management")
+        reasons.append("proposes KV representation, retention, compression, quantization, eviction, or mechanism analysis")
     if priority == 3:
-        reasons.append("proposes KV representation or retention algorithms")
-    if priority == 4:
         reasons.append("uses KV/cache behavior to accelerate a workload or task")
+    if priority == 4:
+        reasons.append("general KV-cache research not centered on sharing or algorithms")
+    if priority == 5 and has_system_management_signal(text):
+        reasons.append("serving architecture, disaggregation, scheduling, offloading, or lifecycle management")
     mechanism_matches = [
         term
         for term in ["compression", "quantization", "eviction", "offloading", "management", "prefill", "disaggregated", "sharing", "reuse"]

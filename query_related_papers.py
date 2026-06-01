@@ -86,19 +86,19 @@ def render_markdown(since: dt.date, keywords: list[str], items: list[dict[str, s
         "## Priority Definition",
         "",
         "- P1: KV cache sharing and communication. Cross-request, cross-user, cross-model, multi-agent, handoff, relay, or explicit KV/token communication.",
-        "- P2: KV serving systems and lifecycle management. Disaggregated serving, prefill/decode separation, offloading, scheduling, memory tiers, cache pools, and production runtime design.",
-        "- P3: KV compression, quantization, and eviction algorithms. Representation-level or token-level methods that change how KV is stored, retained, approximated, or reconstructed.",
-        "- P4: KV-enabled application acceleration. Workloads that use prefix/prompt caching, cache reuse, or KV-aware execution to speed up RAG, agents, VLM/VLA, MoE, video, code, or other tasks.",
-        "- P5/P6: General KV or peripheral cache/context/inference references. Useful background, but not the primary target unless they connect back to KV cache design.",
+        "- P2: KV compression, quantization, eviction, and mechanism analysis. Representation-level, token-level, or theory/diagnostic work on how KV is stored, retained, approximated, reconstructed, or why compression works.",
+        "- P3: KV-enabled application acceleration. Workloads that use prefix/prompt caching, cache reuse, or KV-aware execution to speed up RAG, agents, VLM/VLA, MoE, video, code, or other tasks.",
+        "- P4: General KV cache research. Relevant KV work that is not primarily about sharing, algorithms, or application acceleration.",
+        "- P5: Serving systems and peripheral references. Disaggregated serving, scheduling, offloading, memory tiers, general inference systems, and background references; kept for context, not a primary target.",
         "",
     ]
 
     groups = [
         ("P1: KV Cache Sharing and Communication", lambda item: item.get("rank_priority") == "1"),
-        ("P2: KV Serving Systems and Lifecycle Management", lambda item: item.get("rank_priority") == "2"),
-        ("P3: KV Compression, Quantization, and Eviction Algorithms", lambda item: item.get("rank_priority") == "3"),
-        ("P4: KV-Enabled Application Acceleration", lambda item: item.get("rank_priority") == "4"),
-        ("P5/P6: General and Peripheral Related Work", lambda item: item.get("rank_priority") in {"5", "6"}),
+        ("P2: KV Compression, Quantization, Eviction, and Mechanism Analysis", lambda item: item.get("rank_priority") == "2"),
+        ("P3: KV-Enabled Application Acceleration", lambda item: item.get("rank_priority") == "3"),
+        ("P4: General KV Cache Research", lambda item: item.get("rank_priority") == "4"),
+        ("P5: Serving Systems and Peripheral References", lambda item: item.get("rank_priority") == "5"),
     ]
     for title, predicate in groups:
         grouped = [item for item in items if predicate(item)]

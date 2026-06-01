@@ -6,7 +6,7 @@
 
 `reports/` 只保留两类正式输出：
 
-- `reports/YYYY-Www.md`：每周窗口报告，例如 `2026-W22.md`。每周任务会把当次检索窗口内的相关论文合并到本周文件；同一天重复运行会替换当天段落。
+- `reports/YYYY-Www.md`：ISO 周窗口报告，例如 `2026-W22.md`。每周任务会把该 ISO 周内发表的相关论文合并到本周文件；同一天重复运行会替换当天段落。
 - `reports/all_papers_since_2026.md`：2026-01-01 以来的总集合，按研究方向分组、去重并排序。
 
 不再生成每日 `YYYY-MM-DD.md` 或额外的 `latest.md`。
@@ -77,7 +77,7 @@ python -m pip install pypdf
 - `seed_keywords`：手动固定的重点关键词
 - `papers_dir`：输入论文目录
 - `max_keywords`：最终检索关键词数
-- `days_back`：每日增量查询最近多少天的新结果
+- `days_back`：保留给兼容配置；当前周报默认按 ISO 周边界查询
 - `max_results_per_source`：每个来源最多返回多少条
 - `max_pdf_pages`：每篇 PDF 最多读取多少页用于提取关键词
 

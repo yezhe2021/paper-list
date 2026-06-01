@@ -35,7 +35,18 @@ def has_report_changes() -> bool:
 def main() -> int:
     LOG_PATH.write_text(f"Weekly update started: {dt.datetime.now().isoformat()}\n", encoding="utf-8")
 
-    run([sys.executable, "paper_finder.py"])
+    today = dt.date.today()
+    last_week_report_date = today - dt.timedelta(days=today.isoweekday())
+    last_week_start = last_week_report_date - dt.timedelta(days=last_week_report_date.isoweekday() - 1)
+
+    run([
+        sys.executable,
+        "paper_finder.py",
+        "--report-date",
+        last_week_report_date.isoformat(),
+        "--from-date",
+        last_week_start.isoformat(),
+    ])
     run([sys.executable, "query_related_papers.py"])
 
     if not has_report_changes():

@@ -28,6 +28,10 @@ RUN_DATE: dt.date | None = None
 def current_date() -> dt.date:
     return RUN_DATE or dt.date.today()
 
+
+def iso_week_start(value: dt.date) -> dt.date:
+    return value - dt.timedelta(days=value.isoweekday() - 1)
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "papers_dir": "papers",
     "reports_dir": "reports",
@@ -1037,6 +1041,7 @@ def render_report(
     reported_items: list[dict[str, str]],
     keywords: list[str],
     config: dict[str, Any],
+    from_date: dt.date,
 ) -> str:
     paper_count = sum(1 for item in items if item.get("kind") == "paper")
     resource_count = sum(1 for item in items if item.get("kind") == "resource")
@@ -1050,7 +1055,7 @@ def render_report(
         "## Search settings",
         "",
         f"- Sources: {', '.join(config.get('sources', []))}",
-        f"- Days back: {config['days_back']}",
+        f"- Window: {from_date.isoformat()} to {report_date.isoformat()}",
         f"- Total papers: {paper_count}",
         f"- Total GitHub/resources: {resource_count}",
         f"- Reported items: {len(reported_items)}",
@@ -1149,7 +1154,7 @@ def run(report_date: dt.date | None = None, from_date: dt.date | None = None) ->
 
     keywords = extract_keywords(texts, config)
     if from_date is None:
-        from_date = current_date() - dt.timedelta(days=int(config["days_back"]))
+        from_date = iso_week_start(current_date())
     max_results = int(config["max_results_per_source"])
 
     items: list[dict[str, str]] = []
@@ -1173,7 +1178,7 @@ def run(report_date: dt.date | None = None, from_date: dt.date | None = None) ->
     save_state(state)
 
     today = current_date()
-    report = render_report(today, items, reported_items, keywords, config)
+    report = render_report(today, items, reported_items, keywords, config, from_date)
     if errors:
         report += "\n## Search errors\n\n" + "\n".join(f"- {error}" for error in errors) + "\n"
 
